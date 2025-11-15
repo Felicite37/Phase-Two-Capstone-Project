@@ -1,20 +1,26 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/api";
 import { onAuthStateChanged } from "firebase/auth";
 import Editor from "@/components/Editor";
-import { Draft } from "@/types";
+import { Draft, Post } from "@/types";
+import { createPost, getPostById, updatePost } from "@/lib/posts";
 
 export default function WritePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const postId = searchParams.get("id");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingPost, setIsLoadingPost] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>("");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [currentPost, setCurrentPost] = useState<Post | null>(null);
 
   // Editor state
   const [title, setTitle] = useState("");
@@ -23,13 +29,46 @@ export default function WritePage() {
   const [tags, setTags] = useState("");
   const [coverImage, setCoverImage] = useState("");
 
-  // Check authentication
+  // Check authentication and load post if editing
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsAuthenticated(true);
-        // Load draft from localStorage if exists
-        loadDraft();
+        setCurrentUserId(user.uid);
+        
+        // If editing, load the post
+        if (postId) {
+          setIsLoadingPost(true);
+          try {
+            const post = await getPostById(postId);
+            if (post) {
+              // Check if user owns the post
+              if (post.authorId !== user.uid) {
+                alert("You don't have permission to edit this post");
+                router.push("/");
+                return;
+              }
+              setCurrentPost(post);
+              setTitle(post.title);
+              setContent(post.content);
+              setExcerpt(post.excerpt || "");
+              setTags(post.tags?.join(", ") || "");
+              setCoverImage(post.coverImage || "");
+            } else {
+              alert("Post not found");
+              router.push("/");
+            }
+          } catch (error) {
+            console.error("Error loading post:", error);
+            alert("Failed to load post");
+            router.push("/");
+          } finally {
+            setIsLoadingPost(false);
+          }
+        } else {
+          // Load draft from localStorage if exists
+          loadDraft();
+        }
       } else {
         router.push("/auth/login");
       }
@@ -37,7 +76,7 @@ export default function WritePage() {
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, postId]);
 
   // Auto-save draft every 30 seconds
   useEffect(() => {
@@ -110,8 +149,8 @@ export default function WritePage() {
     }
   };
 
-  // Manual save
-  const handleSaveDraft = async () => {
+  // Manual save to localStorage (backup)
+  const handleSaveDraftLocal = async () => {
     setIsSaving(true);
     saveDraft();
     setTimeout(() => setIsSaving(false), 500);
@@ -124,31 +163,48 @@ export default function WritePage() {
       return;
     }
 
+    if (!currentUserId) {
+      alert("You must be logged in to publish");
+      return;
+    }
+
     setIsPublishing(true);
     try {
-      // TODO: Replace with actual API call in Lab 4
-      const postData = {
-        title,
-        content,
-        excerpt,
-        tags: tags
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter((tag) => tag.length > 0),
-        coverImage,
-        published: true,
-      };
+      const tagsArray = tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
 
-      console.log("Publishing post:", postData);
+      let post: Post;
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (postId && currentPost) {
+        // Update existing post
+        post = await updatePost(postId, {
+          title,
+          content,
+          excerpt: excerpt || undefined,
+          tags: tagsArray,
+          coverImage: coverImage || undefined,
+          published: true,
+        });
+      } else {
+        // Create new post
+        post = await createPost({
+          title,
+          content,
+          excerpt: excerpt || undefined,
+          tags: tagsArray,
+          coverImage: coverImage || undefined,
+          authorId: currentUserId,
+          published: true,
+        });
+      }
 
       // Clear draft after successful publish
       localStorage.removeItem("current-draft");
 
-      // Redirect to home or post page
-      router.push("/");
+      // Redirect to the post page
+      router.push(`/posts/${post.slug}`);
     } catch (error) {
       console.error("Error publishing post:", error);
       alert("Failed to publish post. Please try again.");
@@ -157,7 +213,63 @@ export default function WritePage() {
     }
   };
 
-  if (isLoading) {
+  // Save as draft (unpublished)
+  const handleSaveAsDraft = async () => {
+    if (!title.trim() && !content.trim()) {
+      alert("Please add some content before saving");
+      return;
+    }
+
+    if (!currentUserId) {
+      alert("You must be logged in to save");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const tagsArray = tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
+
+      if (postId && currentPost) {
+        // Update existing post as draft
+        await updatePost(postId, {
+          title,
+          content,
+          excerpt: excerpt || undefined,
+          tags: tagsArray,
+          coverImage: coverImage || undefined,
+          published: false,
+        });
+        setSaveStatus("Draft updated");
+      } else {
+        // Create new draft
+        await createPost({
+          title,
+          content,
+          excerpt: excerpt || undefined,
+          tags: tagsArray,
+          coverImage: coverImage || undefined,
+          authorId: currentUserId,
+          published: false,
+        });
+        setSaveStatus("Draft saved");
+      }
+
+      // Also save to localStorage as backup
+      saveDraft();
+      
+      setTimeout(() => setSaveStatus(""), 2000);
+    } catch (error) {
+      console.error("Error saving draft:", error);
+      setSaveStatus("Failed to save draft");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading || isLoadingPost) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading...</div>
@@ -175,7 +287,9 @@ export default function WritePage() {
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold">Write a new story</h1>
+            <h1 className="text-2xl font-bold">
+              {postId ? "Edit story" : "Write a new story"}
+            </h1>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowPreview(!showPreview)}
@@ -184,7 +298,7 @@ export default function WritePage() {
                 {showPreview ? "Edit" : "Preview"}
               </button>
               <button
-                onClick={handleSaveDraft}
+                onClick={handleSaveAsDraft}
                 disabled={isSaving}
                 className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
               >
