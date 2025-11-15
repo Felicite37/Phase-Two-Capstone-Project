@@ -1,10 +1,11 @@
-import { getPublishedPosts } from "@/lib/posts";
+import { getPublishedPosts, getAllTags } from "@/lib/posts";
 import PostCard from "@/components/PostCard";
 import Container from "@/components/Container";
 import Link from "next/link";
 
 export default async function Home() {
-  const posts = await getPublishedPosts(6); // Get latest 6 posts
+  const latestPosts = await getPublishedPosts(6); // Get latest 6 posts
+  const allTags = await getAllTags();
 
   return (
     <Container>
@@ -16,35 +17,54 @@ export default async function Home() {
           </p>
         </div>
 
-        {posts.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow-sm">
-            <p className="text-gray-500 text-lg mb-4">No posts yet.</p>
+        {/* Popular Tags */}
+        {allTags.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4">Popular Tags</h2>
+            <div className="flex flex-wrap gap-2">
+              {allTags.slice(0, 10).map((tag) => (
+                <Link
+                  key={tag}
+                  href={`/tags/${encodeURIComponent(tag)}`}
+                  className="px-4 py-2 bg-blue-100 text-blue-800 rounded-full hover:bg-blue-200 transition-colors text-sm"
+                >
+                  #{tag}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Latest Posts */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold">Latest Stories</h2>
             <Link
-              href="/write"
-              className="inline-block px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              href="/posts"
+              className="text-blue-600 hover:text-blue-800 font-medium"
             >
-              Write your first story
+              View all →
             </Link>
           </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {posts.map((post) => (
+
+          {latestPosts.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg shadow-sm">
+              <p className="text-gray-500 text-lg mb-4">No posts yet.</p>
+              <Link
+                href="/write"
+                className="inline-block px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+              >
+                Write your first story
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {latestPosts.map((post) => (
                 <PostCard key={post.id} post={post} />
               ))}
             </div>
-            {posts.length >= 6 && (
-              <div className="text-center">
-                <Link
-                  href="/posts"
-                  className="inline-block px-6 py-3 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                >
-                  View all posts
-                </Link>
-              </div>
-            )}
-          </>
-        )}
+          )}
+        </div>
       </div>
     </Container>
   );

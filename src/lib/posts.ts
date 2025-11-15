@@ -38,7 +38,9 @@ const firestoreToPost = (doc: any): Post => {
     slug: data.slug || doc.id,
     authorId: data.authorId || "",
     published: data.published || false,
-    publishedAt: data.publishedAt ? timestampToDate(data.publishedAt) : undefined,
+    publishedAt: data.publishedAt
+      ? timestampToDate(data.publishedAt)
+      : undefined,
     createdAt: timestampToDate(data.createdAt),
     updatedAt: timestampToDate(data.updatedAt),
     tags: data.tags || [],
@@ -71,7 +73,7 @@ export async function createPost(
 ): Promise<Post> {
   try {
     const slug = generateSlug(postData.title);
-    
+
     // Check if slug already exists
     const existingPost = await getPostBySlug(slug);
     if (existingPost) {
@@ -122,7 +124,11 @@ export async function getPostById(id: string): Promise<Post | null> {
 // Get a single post by slug
 export async function getPostBySlug(slug: string): Promise<Post | null> {
   try {
-    const q = query(collection(db, "posts"), where("slug", "==", slug), limit(1));
+    const q = query(
+      collection(db, "posts"),
+      where("slug", "==", slug),
+      limit(1)
+    );
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
@@ -155,10 +161,7 @@ export async function getPublishedPosts(limitCount?: number): Promise<Post[]> {
     console.error("Error getting published posts:", error);
     // If orderBy fails (no index), try without it
     try {
-      let q = query(
-        collection(db, "posts"),
-        where("published", "==", true)
-      );
+      let q = query(collection(db, "posts"), where("published", "==", true));
       if (limitCount && limitCount > 0) {
         q = query(q, limit(limitCount));
       }
@@ -218,7 +221,7 @@ export async function updatePost(
 ): Promise<Post> {
   try {
     const postRef = doc(db, "posts", id);
-    
+
     const updateData: any = {
       ...updates,
       updatedAt: serverTimestamp(),
@@ -274,3 +277,87 @@ export async function softDeletePost(id: string): Promise<void> {
   }
 }
 
+// Get posts by tag
+export async function getPostsByTag(
+  tag: string,
+  limitCount?: number
+): Promise<Post[]> {
+  try {
+    let q = query(
+      collection(db, "posts"),
+      where("published", "==", true),
+      where("tags", "array-contains", tag),
+      orderBy("publishedAt", "desc")
+    );
+
+    if (limitCount && limitCount > 0) {
+      q = query(q, limit(limitCount));
+    }
+
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map((doc) => firestoreToPost(doc));
+  } catch (error) {
+    console.error("Error getting posts by tag:", error);
+    // Fallback: get all posts and filter client-side
+    try {
+      const allPosts = await getPublishedPosts();
+      const filtered = allPosts
+        .filter((post) => post.tags?.includes(tag))
+        .sort((a, b) => {
+          const dateA = a.publishedAt || a.createdAt;
+          const dateB = b.publishedAt || b.createdAt;
+          return dateB.getTime() - dateA.getTime();
+        });
+      return limitCount ? filtered.slice(0, limitCount) : filtered;
+    } catch (fallbackError) {
+      console.error("Error getting posts by tag (fallback):", fallbackError);
+      throw error;
+    }
+  }
+}
+
+// Get all unique tags from published posts
+export async function getAllTags(): Promise<string[]> {
+  try {
+    const posts = await getPublishedPosts();
+    const tagSet = new Set<string>();
+    posts.forEach((post) => {
+      post.tags?.forEach((tag) => tagSet.add(tag));
+    });
+    return Array.from(tagSet).sort();
+  } catch (error) {
+    console.error("Error getting all tags:", error);
+    return [];
+  }
+}
+
+// Search posts (client-side search)
+export async function searchPosts(
+  query: string,
+  limitCount?: number
+): Promise<Post[]> {
+  try {
+    const allPosts = await getPublishedPosts();
+    const searchTerm = query.toLowerCase().trim();
+
+    if (!searchTerm) {
+      return limitCount ? allPosts.slice(0, limitCount) : allPosts;
+    }
+
+    const filtered = allPosts.filter((post) => {
+      const titleMatch = post.title.toLowerCase().includes(searchTerm);
+      const contentMatch = post.content.toLowerCase().includes(searchTerm);
+      const excerptMatch = post.excerpt?.toLowerCase().includes(searchTerm);
+      const tagMatch = post.tags?.some((tag) =>
+        tag.toLowerCase().includes(searchTerm)
+      );
+
+      return titleMatch || contentMatch || excerptMatch || tagMatch;
+    });
+
+    return limitCount ? filtered.slice(0, limitCount) : filtered;
+  } catch (error) {
+    console.error("Error searching posts:", error);
+    throw error;
+  }
+}
