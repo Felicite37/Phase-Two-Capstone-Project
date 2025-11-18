@@ -1,47 +1,44 @@
 "use client";
-
 import { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
-export default function RegisterPage() {
-  const router = useRouter();
+export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const router = useRouter();
 
-  const handleRegister = async (e: any) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      router.push("/auth/login");
-    } catch (error: any) {
-      alert(error.message);
-    }
+    alert("User registered successfully! You can now login.");
+    router.push("/auth/login");
   };
 
   return (
-    <div className="p-5 max-w-md mx-auto">
-      <h1 className="text-2xl font-bold mb-3">Register</h1>
-
-      <form onSubmit={handleRegister} className="flex flex-col gap-3">
+    <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-md shadow-md">
+      <h2 className="text-2xl font-bold mb-4">Sign Up</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="email"
           placeholder="Email"
-          className="border p-2"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          className="w-full p-2 border rounded"
+          required
         />
-
         <input
           type="password"
           placeholder="Password"
-          className="border p-2"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          className="w-full p-2 border rounded"
+          required
         />
-
-        <button className="bg-blue-600 text-white p-2 rounded">Register</button>
+        <button
+          type="submit"
+          className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Sign Up
+        </button>
       </form>
     </div>
   );

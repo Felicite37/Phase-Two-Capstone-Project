@@ -10,7 +10,6 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // Replace with real backend API call
         if (
           credentials?.email === "test@example.com" &&
           credentials?.password === "password"

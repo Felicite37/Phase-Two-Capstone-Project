@@ -10,16 +10,18 @@ import {
   where,
   orderBy,
   limit,
-  Timestamp,
   serverTimestamp,
+  DocumentSnapshot,
+  QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "./api";
 import { Post } from "@/types";
+import { FirebaseError } from "firebase/app";
 
 // Helper function to convert Firestore timestamp to Date
-const timestampToDate = (timestamp: any): Date => {
-  if (timestamp?.toDate) {
-    return timestamp.toDate();
+const timestampToDate = (timestamp: unknown): Date => {
+  if (timestamp && typeof timestamp === "object" && "toDate" in timestamp) {
+    return (timestamp as { toDate: () => Date }).toDate();
   }
   if (timestamp instanceof Date) {
     return timestamp;
@@ -28,8 +30,13 @@ const timestampToDate = (timestamp: any): Date => {
 };
 
 // Helper function to convert Post data from Firestore
-const firestoreToPost = (doc: any): Post => {
+const firestoreToPost = (
+  doc: DocumentSnapshot | QueryDocumentSnapshot
+): Post => {
   const data = doc.data();
+  if (!data) {
+    throw new Error("Document data is undefined");
+  }
   return {
     id: doc.id,
     title: data.title || "",
@@ -76,16 +83,11 @@ export async function createPost(
 
     // Check if slug already exists
     const existingPost = await getPostBySlug(slug);
-    if (existingPost) {
-      // Append timestamp to make it unique
-      const uniqueSlug = `${slug}-${Date.now()}`;
-      postData = { ...postData, slug: uniqueSlug } as any;
-    } else {
-      postData = { ...postData, slug } as any;
-    }
+    const finalSlug = existingPost ? `${slug}-${Date.now()}` : slug;
 
     const postRef = await addDoc(collection(db, "posts"), {
       ...postData,
+      slug: finalSlug,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       readTime: calculateReadTime(postData.content),
@@ -116,6 +118,15 @@ export async function getPostById(id: string): Promise<Post | null> {
 
     return firestoreToPost(postSnap);
   } catch (error) {
+    if (
+      error instanceof FirebaseError &&
+      (error.code === "not-found" || error.code === "failed-precondition")
+    ) {
+      console.warn(
+        "⚠️ Firestore not enabled. Please enable Firestore in Firebase Console."
+      );
+      return null;
+    }
     console.error("Error getting post:", error);
     throw error;
   }
@@ -137,6 +148,15 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 
     return firestoreToPost(querySnapshot.docs[0]);
   } catch (error) {
+    if (
+      error instanceof FirebaseError &&
+      (error.code === "not-found" || error.code === "failed-precondition")
+    ) {
+      console.warn(
+        "⚠️ Firestore not enabled. Please enable Firestore in Firebase Console."
+      );
+      return null;
+    }
     console.error("Error getting post by slug:", error);
     throw error;
   }
@@ -158,6 +178,16 @@ export async function getPublishedPosts(limitCount?: number): Promise<Post[]> {
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map((doc) => firestoreToPost(doc));
   } catch (error) {
+    // If Firestore is not enabled, return empty array
+    if (
+      error instanceof FirebaseError &&
+      (error.code === "not-found" || error.code === "failed-precondition")
+    ) {
+      console.warn(
+        "⚠️ Firestore not enabled. Please enable Firestore in Firebase Console."
+      );
+      return [];
+    }
     console.error("Error getting published posts:", error);
     // If orderBy fails (no index), try without it
     try {
@@ -174,6 +204,16 @@ export async function getPublishedPosts(limitCount?: number): Promise<Post[]> {
         return dateB.getTime() - dateA.getTime();
       });
     } catch (fallbackError) {
+      if (
+        fallbackError instanceof FirebaseError &&
+        (fallbackError.code === "not-found" ||
+          fallbackError.code === "failed-precondition")
+      ) {
+        console.warn(
+          "⚠️ Firestore not enabled. Please enable Firestore in Firebase Console."
+        );
+        return [];
+      }
       console.error("Error getting published posts (fallback):", fallbackError);
       throw error;
     }
@@ -222,7 +262,7 @@ export async function updatePost(
   try {
     const postRef = doc(db, "posts", id);
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       ...updates,
       updatedAt: serverTimestamp(),
     };

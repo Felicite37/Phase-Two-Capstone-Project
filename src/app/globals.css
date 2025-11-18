@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "jodit/build/jodit.min.css";
 
 :root {
   --background: #ffffff;

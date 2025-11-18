@@ -1,8 +1,14 @@
-import type { NextConfig } from "next";
+const path = require("path");
 
-const nextConfig: NextConfig = {
-  /* config options here */
-  reactCompiler: true,
+module.exports = {
+  experimental: {
+    turbopack: true,
+  },
+  webpack(config) {
+    config.resolve.alias["@"] = path.resolve(__dirname, "src");
+    return config;
+  },
+  turbopack: {
+    root: ".",
+  },
 };
-
-export default nextConfig;

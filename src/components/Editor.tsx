@@ -20,6 +20,29 @@ export default function Editor({ content, onChange, placeholder }: EditorProps) 
   const editor = useRef(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Load Jodit CSS dynamically
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/jodit.min.css";
+    link.onerror = () => {
+      // Fallback: try to load from node_modules
+      const fallbackLink = document.createElement("link");
+      fallbackLink.rel = "stylesheet";
+      // Use a data URL or load from CDN as fallback
+      console.warn("Jodit CSS not found at /jodit.min.css");
+    };
+    document.head.appendChild(link);
+
+    return () => {
+      // Cleanup
+      const existingLink = document.querySelector('link[href="/jodit.min.css"]');
+      if (existingLink) {
+        existingLink.remove();
+      }
+    };
+  }, []);
+
   // Jodit configuration
   const config = {
     readonly: false,
